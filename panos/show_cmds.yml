@@ -1,0 +1,21 @@
+- name: demo a series of show commands 
+  hosts: fw1 
+  gather_facts: False
+
+  tasks:
+  - name: show interface 
+    panos_op:
+      ip_address: '{{ ip_address }}'
+      username: '{{ username }}'
+      password: '{{ password }}'
+      cmd: 'show interface all'
+    register: result
+  - debug: msg='{{ result.stdout_lines }}'
+  - name: show running resource-monitor
+    panos_op:
+      ip_address: '{{ ip_address }}'
+      username: '{{ username }}'
+      password: '{{ password }}'
+      cmd: 'show running resource-monitor'
+    register: result
+  - debug: msg='{{ result.stdout_lines }}'

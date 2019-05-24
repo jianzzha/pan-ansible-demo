@@ -1,0 +1,85 @@
+# CLI usage example:
+# ansible-playbook  get_device_not_connected_reason.yml -e "username=indeni password=indenirocks123! ip_address=2.2.2.2 device=1.1.1.1"
+#
+# Input parameters:
+#   ip_address: remote device ip address
+#   username: remote device login username
+#   password: remote device login password
+#   device: unconnected device address; the mgmt server complains that this device is not connected in an alert.
+#
+# Output:
+#   the last executed task indeni_conclusion will output a json object which contains "triage_conclusion", "triage_has_conclusion", "triage_remediation_steps", "triage_has_remediation_steps". If triage_has_conclusion is true, triage_conclusion will contain the conclusion; if triage_has_remediation_steps is true, triage_remediation_steps will contain the remediation_steps
+#   sample indeni_conclusion output:
+#     {
+#      "changed": false,
+#      "status": "success",
+#      "triage_conclusion": "Both the mgmt server and the remote device are reachable",
+#      "triage_has_conclusion": true,
+#      "triage_has_remediation_steps": true,
+#      "triage_remediation_steps": "Please logon the remote device and check if it is provisioned to register with\nthe mgmt server 10.11.95.30\n"
+#     }
+
+
+- name: find the reason why a device is not connected to the mgmt server
+  hosts: localhost
+  gather_facts: False
+
+  tasks:
+  - name: test mgmt server port 3978
+    wait_for:
+      host: '{{ ip_address }}'
+      port: 3978
+      timeout: 5
+      state: present
+    ignore_errors: true
+    register: output
+  - name: mgmt server unreachable
+    block:
+      - name: indeni debug mgmt server port 3978
+        debug:
+          msg: 'mgmt server unreachable: {{output.failed}}'
+      - indeni_conclusion:
+          triage_conclusion_title: mgmt server unreachable
+          triage_conclusion: |
+            Mgmt server port is not open.
+          triage_has_conclusion: true
+          triage_remediation_steps: |
+            Please check if {{ ip_address }} is provisioned properly to manage firewall devices.
+          triage_has_remediation_steps: true
+      - meta: end_play
+    when: output.failed|bool
+  - name: ping the device for connectivity
+    linux_icmp_ping:
+      host: '{{device}}'
+    ignore_errors: true
+    register: ping_output
+  - name: remote device unreachable
+    block:
+      - name: indeni debug remote device connectivity
+        debug:
+          msg: 'ping remote device failed: {{ping_output.failed}}'
+      - indeni_conclusion:
+          triage_conclusion_title: Remote device unreachable
+          triage_conclusion: |
+            The remote device is unreachable.
+          triage_has_conclusion: true
+          triage_remediation_steps: |
+            Please logon the remote device and check if it is online.
+          triage_has_remediation_steps: true
+      - meta: end_play
+    when: ping_output.failed|bool
+  - name: check remote device manually
+    block:
+      - name: indeni manual check remote device
+        debug:
+          msg: 'Complete automated troubleshooting.'
+      - indeni_conclusion:
+          triage_conclusion_title: Both mgmt server and remote device are reachable
+          triage_conclusion: |
+            Both the mgmt server and the remote device are reachable.
+            Manual check of the remote device is required.
+          triage_has_conclusion: true
+          triage_remediation_steps: |
+            Please logon the remote device and check if it is provisioned to register with
+            the mgmt server {{ip_address}}
+          triage_has_remediation_steps: true

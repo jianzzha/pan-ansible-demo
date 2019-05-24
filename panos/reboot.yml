@@ -1,0 +1,13 @@
+- name: demo system reboot 
+  hosts: fw1 
+  gather_facts: False
+
+  tasks:
+  - name: reboot system 
+    panos_op:
+      ip_address: '{{ ip_address }}'
+      username: '{{ username }}'
+      password: '{{ password }}'
+      cmd: 'request restart system'
+    register: result
+  - debug: msg='{{ result.stdout_xml }}'

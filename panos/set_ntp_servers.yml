@@ -1,0 +1,70 @@
+- name: set up ntp server 
+  hosts: fw1 
+  gather_facts: False
+
+  tasks:
+  - name: for demo purpose, set default primary ntp server address
+    set_fact:
+      primary_ntp_server: "1.1.1.1" 
+    when: primary_ntp_server is not defined and secondary_ntp_server is not defined
+  - name: delete secondary ntp server
+    panos_set:
+      ip_address: '{{ ip_address }}'
+      username: '{{ username }}'
+      password: '{{ password }}'
+      xpath: "/config/devices/entry/deviceconfig/system/ntp-servers/secondary-ntp-server"
+      command: 'delete'
+    when: secondary_ntp_server is not defined
+  - name: delete primary ntp server
+    panos_set:
+      ip_address: '{{ ip_address }}'
+      username: '{{ username }}'
+      password: '{{ password }}'
+      xpath: "/config/devices/entry/deviceconfig/system/ntp-servers/primary-ntp-server"
+      command: 'delete'
+    when: primary_ntp_server is not defined
+  - name: config new primary ntp server 
+    panos_set:
+      ip_address: '{{ ip_address }}'
+      username: '{{ username }}'
+      password: '{{ password }}'
+      xpath: "/config/devices/entry/deviceconfig/system/ntp-servers/primary-ntp-server"
+      element: "<ntp-server-address>{{primary_ntp_server}}</ntp-server-address>" 
+      command: 'set'
+    when: primary_ntp_server is defined
+  - name: config new secondary ntp server
+    panos_set:
+      ip_address: '{{ ip_address }}'
+      username: '{{ username }}'
+      password: '{{ password }}'
+      xpath: "/config/devices/entry/deviceconfig/system/ntp-servers/secondary-ntp-server"
+      element: "<ntp-server-address>{{secondary_ntp_server}}</ntp-server-address>"
+      command: 'set'
+    when: secondary_ntp_server is defined
+  - name: Commit configuration
+    panos_commit:
+      ip_address: '{{ ip_address }}'
+      username: '{{ username }}'
+      password: '{{ password }}'
+  - name: get primary ntp server
+    panos_set:
+      ip_address: '{{ ip_address }}'
+      username: '{{ username }}'
+      password: '{{ password }}'
+      xpath: "/config/devices/entry/deviceconfig/system/ntp-servers/primary-ntp-server"
+      command: 'show'
+    register: primary_result
+    when: primary_ntp_server is defined 
+  - debug: msg='{{primary_result.stdout_xml}}'
+    when: primary_ntp_server is defined 
+  - name: get secondary ntp server
+    panos_set:
+      ip_address: '{{ ip_address }}'
+      username: '{{ username }}'
+      password: '{{ password }}'
+      xpath: "/config/devices/entry/deviceconfig/system/ntp-servers/secondary-ntp-server"
+      command: 'show'
+    register: secondary_result
+    when: secondary_ntp_server is defined
+  - debug: msg='{{secondary_result.stdout_xml}}'
+    when: secondary_ntp_server is defined

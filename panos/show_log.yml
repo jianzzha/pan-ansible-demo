@@ -1,0 +1,49 @@
+# this script can take the following parameters via --extra-vars on command line
+# alert_time: this is the local timestamp on indeni server that an alert is generated
+#             default value: current localhost time
+# delta: this is the time range to search for around the alert_time timestamp
+#              default value: 300
+# filter: the log search filter, for example "description contains 'System restart'"
+#              default: None, this means all logs are retrieved
+# log_type: what type of log to retrieve
+#              default: system
+#
+
+- name: search for uptime low reason 
+  hosts: fw1 
+  gather_facts: False
+
+  tasks:
+  - set_fact:
+      local_time: "{{ lookup('pipe','date') }}"
+  - set_fact:
+      local_search_time: "{{local_time}}"
+    when: alert_time is not defined
+  - set_fact:
+      local_search_time: "{{alert_time}}"
+    when: alert_time is defined
+  - name: find device current time
+    panos_op:
+      ip_address: '{{ ip_address }}'
+      username: '{{ username }}'
+      password: '{{ password }}'
+      cmd: 'show clock'
+    register: result
+  - set_fact:
+      current_time: "{{ result.stdout | from_json }}"
+  - set_fact:
+      device_time: "{{current_time.response.result}}"
+  - panos_log:
+      ip_address: '{{ ip_address }}'
+      username: '{{ username }}'
+      password: '{{ password }}'
+      log_type: '{{log_type|default("system")}}'
+      log_fields: ["severity", "time_generated", "opaque"]
+      # example,filter: "description contains 'System restart'"
+      filter: "{{filter|default(None)}}"
+      device_time: "{{device_time|default(None)}}"
+      local_time: "{{local_time|default(None)}}"
+      local_search_time: "{{local_search_time|default(None)}}"
+      delta: "{{delta|default(300)}}"
+    register: result
+  - debug: msg='{{ result.logs }}'

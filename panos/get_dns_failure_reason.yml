@@ -1,0 +1,100 @@
+# CLI usage example:
+# ansible-playbook  get_dns_failure_reason.yml -e "dns_server=8.8.8.8"
+#
+# Input parameters:
+#   dns_server: dns server address in the alert data
+#
+# Output:
+#   the last executed task indeni_conclusion will output a json object which contains "triage_conclusion", "triage_has_conclusion", "triage_remediation_steps", "triage_has_remediation_steps". If triage_has_conclusion is true, triage_conclusion will contain the conclusion; if triage_has_remediation_steps is true, triage_remediation_steps will contain the remediation_steps
+#   sample indeni_conclusion output:
+#     {
+#      "changed": false,
+#      "status": "success",
+#      "triage_conclusion_title": "dns server unreachable",
+#      "triage_conclusion": "The dns server is unreachable",
+#      "triage_has_conclusion": true,
+#      "triage_has_remediation_steps": true,
+#      "triage_remediation_steps": "Please check if this dns server is online and has the correct ip address defined"
+#     }
+
+
+- name: find the reason why a device is not connected to the mgmt server
+  hosts: localhost
+  gather_facts: False
+
+  tasks:
+  - name: indeni_debug
+    debug:
+      msg: install nmap on indeni server 
+  - name: install nmap package
+    apt:
+      name: nmap
+      state: present
+    become: true
+  - name: indeni_debug
+    debug:
+      msg: 'install nmap on indeni server: complete'
+  - name: indeni_debug
+    debug:
+      msg: use installed nmap to test if remote dns port is open
+  - name: check if remote dns port is open
+    shell: |
+      nmap -sU -p 53 {{dns_server}} | awk '/domain/{print $2}'
+    become: true
+    register: nmap_output
+  - name: indeni_debug
+    debug:
+      msg: 'test remote dns port: complete'
+  - name: dns service port reachable
+    block:
+      - name: indeni debug dns port 53
+        debug:
+          msg: 'dns server port is open and reachable'
+      - indeni_conclusion:
+          triage_conclusion_title: 'dns server reachable'
+          triage_conclusion: >
+            dns server port is open and reachable
+          triage_has_conclusion: true
+          triage_remediation_steps: >
+            The dns serer is online and reachable. Please open a support ticket with
+            Palo Alto support center for solution.
+          triage_has_remediation_steps: true
+      - meta: end_play
+    when:  nmap_output.stdout == 'open'
+  - name: check DNS server network reachability
+    linux_icmp_ping:
+      host: '{{dns_server}}'
+    ignore_errors: true
+    register: ping_output
+  - name:  dns server reachable
+    block:
+      - name: indeni debug dns server reachable
+        debug:
+          msg: 'indeni server is pingable'
+      - indeni_conclusion:
+          triage_conclusion_title: dns server reachable
+          triage_conclusion: >
+            The dns server is reachable, but the dns port is not open.
+          triage_has_conclusion: true
+          triage_remediation_steps: >
+            Please check if the configured dns server has dns service running.
+            If the dns service operate properly, please check if some firewall
+            is blocking the dns traffic.
+          triage_has_remediation_steps: true
+      - meta: end_play
+    when: not ping_output.failed|bool
+  - name:  dns server unreachable
+    block:
+      - name:  indeni debug dns server unreachable
+        debug:
+          msg: dns server ping failed
+      - indeni_conclusion:
+          triage_conclusion_title: dns server unreachable
+          triage_conclusion: >
+            The dns server is unreachable.
+          triage_has_conclusion: true
+          triage_remediation_steps: >
+            Please check if this dns server is online and has the correct
+            ip address defined.
+          triage_has_remediation_steps: true
+

@@ -1,0 +1,36 @@
+- name: set up ntp server 
+  hosts: localhost 
+  gather_facts: False
+
+  tasks:
+  - name: for demo purpose, set default primary ntp server address
+    set_fact:
+      primary_ntp_server: "1.1.1.1" 
+    when: primary_ntp_server is not defined and secondary_ntp_server is not defined
+  - name: get primary ntp server
+    panos_set:
+      ip_address: '{{ ip_address }}'
+      username: '{{ username }}'
+      password: '{{ password }}'
+      xpath: "/config/devices/entry/deviceconfig/system/ntp-servers/primary-ntp-server"
+      command: 'show'
+    register: primary_result
+    when: primary_ntp_server is defined 
+  - debug: msg='{{primary_result.stdout_xml}}'
+    when: primary_ntp_server is defined 
+  - debug: msg='{{secondary_result.stdout_xml}}'
+    when: secondary_ntp_server is defined
+  - pip:
+      name: lxml 
+    become: true
+  - pip:
+      name: jmespath 
+    become: true
+
+  - xml:
+      xmlstring: '{{primary_result.stdout_xml}}'
+      xpath: '/response/result/primary-ntp-server/ntp-server-address'
+      content: text 
+    register: address
+  - debug: msg="{{address.matches[0]['ntp-server-address']}}"
+

@@ -1,0 +1,120 @@
+# CLI usage example:
+# ansible-playbook get_uptime_low_reason.yml -e "alert_time='Mar 10 03:03:41 UTC 2019' delta=300 username=indeni password=indenirocks123! ip_address=10.11.95.31"
+#
+# Input parameters:
+#   alert_time: each alert has an associated timestamp, this timestamp will be used to check against log timestamp or crashinfo timestamp
+#   delta: this is the allowed deviation error when comparing alert timestamp with crashinfo timestamp or log timestamp, 
+#   ip_address: remote device ip address
+#   username: remote device login username
+#   password: remote device login password
+#
+# Output:
+#   the last executed task indeni_conclusion will output a json object which contains "triage_conclusion", "triage_has_conclusion", "triage_remediation_steps", "triage_has_remediation_steps". If triage_has_conclusion is true, triage_conclusion will contain the conclusion; if triage_has_remediation_steps is true, triage_remediation_steps will contain the remediation_steps 
+#   sample indeni_conclusion output: 
+#    {
+#    "changed": false,
+#    "triage_conclusion": "uptime low is caused by system crash identified by /var/cores/crashinfo/dha_9.0.0_0.info",
+#    "status": "success",
+#    "triage_has_conclusion": true,
+#    "triage_remediation_steps": "Follow https://knowledgebase.paloaltonetworks.com/KCSArticleDetail?id=kA10g000000ClRlCAK and collect the support files\nOpen a ticket with the Palo Alto technical support center and upload the collected support files\n",
+#    "triage_has_remediation_steps": true
+#    }
+
+ 
+
+- name: search for uptime low reason 
+  hosts: localhost 
+  gather_facts: False
+
+  tasks:
+  - set_fact:
+      local_time: "{{ lookup('pipe','date') }}"
+  - set_fact:
+      local_search_time: "{{local_time}}"
+    when: alert_time is not defined
+  - set_fact:
+      local_search_time: "{{alert_time}}"
+    when: alert_time is defined
+  - name: find device current time
+    panos_op:
+      ip_address: '{{ ip_address }}'
+      username: '{{ username }}'
+      password: '{{ password }}'
+      cmd: 'show clock'
+    register: result
+  - set_fact:
+      current_time: "{{ result.stdout | from_json }}"
+  - set_fact:
+      device_time: "{{current_time.response.result}}"
+  - name: examine log for system reboot
+    panos_log:
+      ip_address: '{{ ip_address }}'
+      username: '{{ username }}'
+      password: '{{ password }}'
+      log_type: "system"
+      log_fields: ["severity", "time_generated", "opaque"]
+      filter: "description contains 'System restart'"
+      device_time: "{{device_time}}"
+      local_time: "{{local_time}}"
+      local_search_time: "{{local_search_time}}"
+      delta: "300"
+    register: result
+  - block:
+      - debug: msg="uptime low is caused by system reboot"
+      - indeni_conclusion:
+          triage_conclusion_title: System reboot detected
+          triage_conclusion: |
+            This system had a reboot operation identified by the following log entry,
+            '{{result.logs}}'
+          triage_has_conclusion: true
+          triage_remediation_steps: |
+            System reboot sometimes is requested by the administrator due to routine maintenance.
+            Please check if this is an expected operation.
+          triage_has_remediation_steps: true
+      - meta: end_play
+    when: result.selected_entries > 0
+  - name: show system files
+    panos_op:
+      ip_address: '{{ ip_address }}'
+      username: '{{ username }}'
+      password: '{{ password }}'
+      cmd: 'show system files'
+    register: result
+  - set_fact:
+      system_files_output: "{{result.stdout | from_json }}"
+  - name: check if system has crashed
+    panos_check_coredump:
+      input_str: "{{system_files_output.response.result}}"
+      local_time: "{{local_time}}"
+      local_search_time: "{{local_search_time}}"
+      device_time: "{{device_time}}"
+      delta: "300"
+    register: check_coredump
+  - name: system crash detected
+    block:
+      - debug: msg="uptime low is caused by system crash"
+      - indeni_conclusion:
+          triage_conclusion_title: Software crash detected
+          triage_conclusion: |
+            Uptime low is caused by system crash identified by,
+            '{{check_coredump.extra_info}}'
+          triage_has_conclusion: true
+          triage_remediation_steps: |
+            Follow https://knowledgebase.paloaltonetworks.com/KCSArticleDetail?id=kA10g000000ClRlCAK and collect the support files
+            Open a ticket with the Palo Alto technical support center and upload the collected support files
+          triage_has_remediation_steps: true
+      - meta: end_play
+    when: check_coredump.found_coredump | bool
+  - name: manual check
+    block:
+      - debug: msg="no system reboot nor crash detected" 
+      - indeni_conclusion:
+          triage_conclusion_title: No system reboot nor crash detected
+          triage_conclusion: |
+            No system reboot nor crash detected by automation. Manual investigation is required.
+          triage_has_conclusion: true
+          triage_remediation_steps: |
+            Check if Indeni found multiple devices have the same up time low symptom around the same time, that will indicate there was a power failure.
+            Make sure the power cable is securely connected to the power source and the device.
+          triage_has_remediation_steps: true
+

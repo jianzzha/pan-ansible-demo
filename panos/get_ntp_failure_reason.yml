@@ -1,0 +1,88 @@
+# CLI usage example:
+# ansible-playbook  get_ntp_failure_reason.yml -e "ntp_server=216.239.35.0"
+#
+# Input parameters:
+#   ntp_server: ntp server address in the alert data
+#
+# Output:
+#   the last executed task indeni_conclusion will output a json object which contains "triage_conclusion", "triage_has_conclusion", "triage_remediation_steps", "triage_has_remediation_steps". If triage_has_conclusion is true, triage_conclusion will contain the conclusion; if triage_has_remediation_steps is true, triage_remediation_steps will contain the remediation_steps
+#   sample indeni_conclusion output:
+#     {
+#      "changed": false,
+#      "status": "success",
+#      "triage_conclusion_title": "ntp server reachable",
+#      "triage_conclusion": "The ntp server is reachable, but the ntp port is not open.",
+#      "triage_has_conclusion": true,
+#      "triage_has_remediation_steps": true,
+#      "triage_remediation_steps": "Please check if the configured ntp server has ntp service running. If the ntp service operate properly, please check if some firewall is blocking the ntp traffic."
+#     }
+
+
+- name: find the reason why a ntp service is unreachable 
+  hosts: localhost
+  gather_facts: False
+
+  tasks:
+  - name: install nmap package
+    apt:
+      name: nmap
+      state: present
+    become: true
+  - name: check if remote ntp port is open
+    shell: |
+      nmap -sU -p 123 {{ntp_server}} | awk '/ntp/{print $2}'
+    become: true
+    register: nmap_output
+  - name: ntp service port reachable
+    block:
+      - name: indeni debug ntp port 123
+        debug:
+          msg: 'ntp server port is open and reachable'
+      - indeni_conclusion:
+          triage_conclusion_title: 'ntp server reachable'
+          triage_conclusion: >
+            ntp server port is open and reachable
+          triage_has_conclusion: true
+          triage_remediation_steps: >
+            The ntp server is online and reachable. Please open a support ticket with
+            Palo Alto support center for solution.
+          triage_has_remediation_steps: true
+      - meta: end_play
+    when:  nmap_output.stdout == 'open'
+  - name: check NTP server network reachability
+    linux_icmp_ping:
+      host: '{{ntp_server}}'
+    ignore_errors: true
+    register: ping_output
+  - name:  ntp server reachable
+    block:
+      - name: indeni debug ntp server reachable
+        debug:
+          msg: 'indeni server is pingable'
+      - indeni_conclusion:
+          triage_conclusion_title: ntp server reachable
+          triage_conclusion: >
+            The ntp server is reachable, but the ntp port is not open.
+          triage_has_conclusion: true
+          triage_remediation_steps: >
+            Please check if the configured ntp server has ntp service running.
+            If the ntp service operate properly, please check if some firewall
+            is blocking the ntp traffic.
+          triage_has_remediation_steps: true
+      - meta: end_play
+    when: not ping_output.failed|bool
+  - name:  ntp server unreachable
+    block:
+      - name:  indeni debug ntp server unreachable
+        debug:
+          msg: ntp server ping failed
+      - indeni_conclusion:
+          triage_conclusion_title: ntp server unreachable
+          triage_conclusion: >
+            The ntp server is unreachable.
+          triage_has_conclusion: true
+          triage_remediation_steps: >
+            Please check if this ntp server is online and has the correct
+            ip address defined.
+          triage_has_remediation_steps: true
+

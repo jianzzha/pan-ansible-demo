@@ -1,0 +1,9 @@
+{
+    "ANSIBLE_MODULE_ARGS": {
+	"input_str": "",
+        "local_time": "Wed Apr 10 03:03:41 UTC 2019",
+        "local_search_time": "Mar 10 03:03:41 UTC 2019",
+	"device_time": "Tue Apr 10 03:03:41 UTC 2019",
+	"delta": "300"
+    }
+}

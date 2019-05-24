@@ -1,0 +1,5 @@
+{
+    "ANSIBLE_MODULE_ARGS": {
+	"input_str": "Slot   Description                         Alarm    Inserted\n S1    Fan Tray                            False    True\n\n----Fans----\nSlot   Description                         Alarm     RPMs Min RPM\n S1    Fan #1 RPM                          False 2100  2500\n----Power----\n"
+    }
+}

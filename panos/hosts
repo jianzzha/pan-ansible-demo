@@ -1,0 +1,8 @@
+[panos]
+localhost
+
+[panos:vars]
+ip_address=10.11.95.31
+ansible_connection=local
+username=indeni
+password=indenirocks123!

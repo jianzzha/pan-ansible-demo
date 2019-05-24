@@ -1,0 +1,66 @@
+# CLI usage example:
+# ansible-playbook get_temperature_high_reason.yml -e "username=indeni password=indenirocks123! ip_address=172.16.20.81"
+#
+# Input parameters:
+#   ip_address: remote device ip address
+#   username: remote device login username
+#   password: remote device login password
+#
+# Output:
+#   the last executed task indeni_conclusion will output a json object which contains "triage_conclusion", "triage_has_conclusion", "triage_remediation_steps", "triage_has_remediation_steps". If triage_has_conclusion is true, triage_conclusion will contain the conclusion; if triage_has_remediation_steps is true, triage_remediation_steps will contain the remediation_steps 
+#   sample indeni_conclusion output: 
+#     {
+#      "changed": false,
+#      "status": "success",
+#      "triage_conclusion": "no fan failure detected", 
+#      "triage_has_conclusion": true,
+#      "triage_has_remediation_steps": true, 
+#      "triage_remediation_steps": "Please check the temperature of the room or rack where this device is installed to see if its temperature has increased beyond what is normal.\nIf the room temperature is normal, please consider increase the temperature alert threshold. \n"
+#     }
+
+
+- name: search for chassis temperature high reason
+  hosts: localhost
+  gather_facts: False
+
+  tasks:
+  - name: show system environmentals
+    panos_op:
+      ip_address: '{{ ip_address }}'
+      username: '{{ username }}'
+      password: '{{ password }}'
+      cmd: 'show system environmentals'
+    register: result
+  - set_fact:
+      cli_output: "{{result.stdout | from_json }}"
+  - name: check if fan speed is abnormal
+    panos_check_fan_speed:
+      input_str: "{{cli_output.response.result}}"
+    register: check_fan
+  - name: fan malfunction detected
+    block:
+      - debug: msg="fan malfunction detected"
+      - indeni_conclusion:
+          triage_conclusion_title: Fan failure detected
+          triage_conclusion: |
+            Device overheating is caused by fan failure identified below,
+            '{{check_fan.extra_info}}'
+          triage_has_conclusion: true
+          triage_remediation_steps: |
+            Please open a support ticket with Palo Alto Networks and replace the hardware. 
+          triage_has_remediation_steps: true
+      - meta: end_play
+    when: check_fan.fan_error
+  - name: manual check
+    block:
+      - debug: msg='no fan failure detected'
+      - indeni_conclusion:
+          triage_conclusion_title: No fan failure detected
+          triage_conclusion: |
+            No fan failure detected by automation. Manual investigation is required.
+          triage_has_conclusion: true
+          triage_remediation_steps: |
+            Please check the temperature of the room or rack where this device is installed to see if its temperature has increased beyond what is normal.
+            If the room temperature is normal, please consider increase the temperature alert threshold. 
+          triage_has_remediation_steps: true
+    when: not check_fan.fan_error
